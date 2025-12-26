@@ -17,6 +17,7 @@ interface BookingRequest {
 interface EscrowReleaseRequest {
     escrow_id: string;
     proof?: string;      // Proof of Delivery (PNR, Ticket, etc)
+    wallet_address: string; // Required for authorization
 }
 
 export class NexusClient {

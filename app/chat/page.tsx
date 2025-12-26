@@ -271,7 +271,8 @@ ${!connected ? '\n⚠️ **Connect your wallet** to enable booking and payments.
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     escrow_id: pendingPayment.escrowId,
-                    tx_signature: signature
+                    tx_signature: signature,
+                    wallet_address: publicKey.toBase58()
                 })
             });
 
