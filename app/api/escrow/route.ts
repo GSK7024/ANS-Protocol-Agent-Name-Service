@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/utils/supabase/client';
 import { ANS_CONFIG, getFeeBreakdown } from '@/lib/fees';
-import { validateEscrowInput, validateWallet } from '@/lib/validation';
+import { validateEscrowInput, validateWallet, validateBuyerNotSeller } from '@/lib/validation';
 import { rateLimitMiddleware, getRateLimitHeaders } from '@/lib/rateLimiter';
 import { logEscrowCreate, logRateLimitHit, hashIP } from '@/lib/auditLogger';
+import { isWalletAuthorizedForAction } from '@/lib/walletAuth';
 
 /**
  * ANS Escrow API
@@ -76,6 +77,15 @@ export async function POST(req: NextRequest) {
         const resolved = await resolveRes.json();
 
         const seller_wallet = resolved?.owner || null;
+
+        // 🔒 SECURITY FIX #7: Prevent self-dealing (buyer = seller)
+        const selfDealCheck = validateBuyerNotSeller(buyer_wallet, seller_wallet);
+        if (!selfDealCheck.valid) {
+            return NextResponse.json({
+                error: selfDealCheck.error || 'Self-dealing not allowed',
+                severity: selfDealCheck.severity
+            }, { status: 400 });
+        }
 
         // Calculate fee using configurable ANS_CONFIG (FREE at launch!)
         const feeBreakdown = getFeeBreakdown(parseFloat(amount));
@@ -176,10 +186,15 @@ export async function GET(req: NextRequest) {
 // PUT: Update escrow status (lock, confirm, release, refund)
 export async function PUT(req: NextRequest) {
     try {
-        const { escrow_id, action, tx_signature, proof_of_delivery } = await req.json();
+        const { escrow_id, action, tx_signature, proof_of_delivery, wallet_address } = await req.json();
 
         if (!escrow_id || !action) {
             return NextResponse.json({ error: 'Missing escrow_id or action' }, { status: 400 });
+        }
+
+        // 🔒 SECURITY FIX #1: Require wallet for authorization
+        if (!wallet_address) {
+            return NextResponse.json({ error: 'wallet_address required for authorization' }, { status: 400 });
         }
 
         // Get current escrow
@@ -191,6 +206,15 @@ export async function PUT(req: NextRequest) {
 
         if (fetchError || !escrow) {
             return NextResponse.json({ error: 'Escrow not found' }, { status: 404 });
+        }
+
+        // 🔒 SECURITY FIX #1: Verify wallet is authorized for this action
+        const authCheck = isWalletAuthorizedForAction(wallet_address, escrow, action);
+        if (!authCheck.authorized) {
+            return NextResponse.json({
+                error: authCheck.error || 'Unauthorized',
+                hint: 'You must sign with the authorized wallet for this action'
+            }, { status: 403 });
         }
 
         let updates: any = {};
@@ -250,11 +274,15 @@ export async function PUT(req: NextRequest) {
                 break;
 
             case 'dispute':
+                // 🔒 SECURITY FIX #3: Set 7-day auto-resolution deadline
+                const disputeExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
                 updates = {
                     status: 'disputed',
-                    notes: proof_of_delivery?.reason || 'Dispute opened'
+                    notes: proof_of_delivery?.reason || 'Dispute opened',
+                    dispute_expires_at: disputeExpiresAt.toISOString(),
+                    disputed_at: new Date().toISOString()
                 };
-                message = 'Dispute opened. Under review.';
+                message = `Dispute opened. Auto-refund in 7 days if unresolved (${disputeExpiresAt.toLocaleDateString()}).`;
                 break;
 
             default:

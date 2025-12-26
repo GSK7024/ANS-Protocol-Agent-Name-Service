@@ -174,3 +174,22 @@ export function validateEscrowInput(data: {
 
     return { valid: true };
 }
+
+/**
+ * Validate buyer is not the same as seller (prevent self-dealing)
+ */
+export function validateBuyerNotSeller(buyerWallet: string, sellerWallet: string | null): ValidationResult {
+    if (!sellerWallet) {
+        return { valid: true }; // Seller wallet not resolved yet, allow
+    }
+
+    if (buyerWallet.toLowerCase() === sellerWallet.toLowerCase()) {
+        return {
+            valid: false,
+            error: 'Buyer cannot be the same as seller',
+            severity: 'high'
+        };
+    }
+
+    return { valid: true };
+}

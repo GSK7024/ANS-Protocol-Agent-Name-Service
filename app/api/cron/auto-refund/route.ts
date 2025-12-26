@@ -26,8 +26,12 @@ const supabase = createClient(
 const SOLANA_RPC = process.env.SOLANA_RPC_URL || 'https://api.devnet.solana.com';
 const connection = new Connection(SOLANA_RPC);
 
-// Secret to validate cron calls (set in environment)
-const CRON_SECRET = process.env.CRON_SECRET || 'default-cron-secret-change-me';
+// Secret to validate cron calls (REQUIRED - no default!)
+const CRON_SECRET = process.env.CRON_SECRET;
+
+if (!CRON_SECRET) {
+    console.error('❌ [CRITICAL] CRON_SECRET environment variable is not set!');
+}
 
 export async function GET(req: NextRequest) {
     // Verify cron secret (prevents unauthorized calls)
@@ -51,11 +55,11 @@ export async function GET(req: NextRequest) {
 
     try {
         // 1. Find expired escrows that are still locked (payment received but not fulfilled)
+        // OR disputed escrows past their 7-day resolution deadline
         const { data: expiredEscrows, error: fetchError } = await supabase
             .from('escrow_transactions')
             .select('*')
-            .eq('status', 'locked')
-            .lt('expires_at', new Date().toISOString())
+            .or('and(status.eq.locked,expires_at.lt.' + new Date().toISOString() + '),and(status.eq.disputed,dispute_expires_at.lt.' + new Date().toISOString() + ')')
             .limit(50);  // Process in batches
 
         if (fetchError) {
@@ -64,7 +68,7 @@ export async function GET(req: NextRequest) {
         }
 
         if (!expiredEscrows || expiredEscrows.length === 0) {
-            console.log('✅ [AUTO-REFUND] No expired escrows found');
+            console.log('✅ [AUTO-REFUND] No expired or disputed escrows found');
             return NextResponse.json({
                 success: true,
                 message: 'No expired escrows to refund',

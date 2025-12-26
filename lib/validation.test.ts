@@ -10,6 +10,7 @@ import {
     validateRating,
     sanitizeText,
     validateEscrowInput,
+    validateBuyerNotSeller,
 } from './validation';
 
 describe('Agent Name Validation', () => {
@@ -180,6 +181,42 @@ describe('Escrow Input Validation', () => {
                 amount: -1,
             });
             expect(result.valid).toBe(false);
+        });
+    });
+});
+
+describe('Buyer Not Seller Validation', () => {
+    describe('validateBuyerNotSeller', () => {
+        it('should accept different buyer and seller wallets', () => {
+            const result = validateBuyerNotSeller(
+                '7xKXtg2CV1vxGg7HJBqHiE2NuRbGtQ1W9TGGWTdz9mJf',
+                '8yKXtg2CV1vxGg7HJBqHiE2NuRbGtQ1W9TGGWTdz9mJg'
+            );
+            expect(result.valid).toBe(true);
+        });
+
+        it('should reject same buyer and seller wallet (self-dealing)', () => {
+            const wallet = '7xKXtg2CV1vxGg7HJBqHiE2NuRbGtQ1W9TGGWTdz9mJf';
+            const result = validateBuyerNotSeller(wallet, wallet);
+            expect(result.valid).toBe(false);
+            expect(result.error).toContain('cannot be the same');
+            expect(result.severity).toBe('high');
+        });
+
+        it('should handle case-insensitive comparison', () => {
+            const result = validateBuyerNotSeller(
+                '7xKXtg2CV1vxGg7HJBqHiE2NuRbGtQ1W9TGGWTdz9mJf',
+                '7XKXTG2CV1VXGG7HJBQHIE2NURBGTQ1W9TGGWTDZ9MJF'
+            );
+            expect(result.valid).toBe(false);
+        });
+
+        it('should allow when seller wallet is null (not resolved yet)', () => {
+            const result = validateBuyerNotSeller(
+                '7xKXtg2CV1vxGg7HJBqHiE2NuRbGtQ1W9TGGWTdz9mJf',
+                null
+            );
+            expect(result.valid).toBe(true);
         });
     });
 });
