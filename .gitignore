@@ -86,3 +86,9 @@ test-data/
 # ✅ README.md      - Project documentation
 # ✅ package.json   - Dependencies
 .vercel
+
+# secrets & build artifacts (added during cleanup)
+keys.txt
+*.key
+key*.csv
+*.tsbuildinfo
